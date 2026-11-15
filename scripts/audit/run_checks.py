@@ -15,7 +15,9 @@ FLOWS = os.path.join(AUD, "flows.csv")
 STATS = os.path.join(AUD, "extract_stats.csv")
 GT = os.path.join(ROOT, "data", "ground_truth.csv")
 LABELED = os.path.join(ROOT, "data", "labeled")
-REPORT = os.path.join(AUD, "AUDIT_REPORT.md")
+# REPORT_OUT env → tulis ke nama lain (mis. AUDIT_REPORT_v2.md utk revisi R4).
+REPORT = os.environ.get("REPORT_OUT") or os.path.join(AUD, "AUDIT_REPORT.md")
+if not os.path.isabs(REPORT): REPORT = os.path.join(AUD, REPORT)
 
 # Ambang (dapat disetel) — ditulis di laporan
 TH_UNKNOWN_PASS, TH_UNKNOWN_WARN = 2.0, 10.0      # persen

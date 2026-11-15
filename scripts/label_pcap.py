@@ -30,6 +30,12 @@ GT = os.path.join(ROOT, "data", "ground_truth.csv")
 IFACE2ROLE = {"N6": "dn", "N3": "up", "N4": "up", "N2": "up",
               "N1": "up", "SBI": "cp", "TLS": "cp"}
 
+# Revisi R1 (temuan audit F): IP container attacker HANYA menyerang → setup/teardown
+# serangan SBI (Tier 4/5) yang tercecer di luar window TIDAK boleh masuk benign.
+# CATATAN: JANGAN masukkan IP ue-mal (10.45.0.9, 172.23.0.43) — trafik benign dari
+# UE penyerang itu SAH (ia juga browsing normal) & penting utk ketahanan anti-shortcut.
+ATTACKER_CONTAINER_IPS = ["172.22.0.50", "172.23.0.50"]
+
 def sh(cmd, stdin_path=None, stdout_path=None):
     """Jalankan tshark via pipe (hindari AppArmor path-rule)."""
     fin = open(stdin_path, "rb") if stdin_path else None
@@ -140,14 +146,16 @@ def main():
     # 2) Benign = di LUAR SEMUA jendela serangan (union lintas role).
     #    Serangan Tier0 (N6) juga melintas N3(up) sbg GTP-U → jangan dianggap benign.
     all_windows = [w for ws in windows_by_role.values() for w in ws]
+    # Kecualikan IP container attacker dari benign (R1): ip.addr != masing-masing.
+    cont_excl = " && ".join(f"ip.addr != {ip}" for ip in ATTACKER_CONTAINER_IPS)
     for p in pcaps:
         role = os.path.basename(p).split("_",1)[0]
         wins = all_windows
         if wins:
             cond = " || ".join(f"(frame.time_epoch >= {s} && frame.time_epoch <= {e})" for s,e in wins)
-            dfilt = f"ip && !({cond})"
+            dfilt = f"ip && !({cond}) && {cont_excl}"
         else:
-            dfilt = "ip"
+            dfilt = f"ip && {cont_excl}"
         outdir = os.path.join(LABELED, "benign"); os.makedirs(outdir, exist_ok=True)
         outp = os.path.join(outdir, f"{role}_{os.path.basename(p)}")
         n = tshark_extract(p, outp, dfilt)
