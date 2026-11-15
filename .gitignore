@@ -6,6 +6,7 @@ reports/
 # Sertifikat & kunci TLS lab (jangan bocor)
 tls/ca/
 tls/certs/
+tls/weak/
 tls/*.key
 tls/*.crt
 tls/*.pem

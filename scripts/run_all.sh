@@ -16,6 +16,7 @@ for t in "${TIERS[@]}"; do
     2) echo "###### TIER 2 (PFCP) ######"; bash scenarios/tier2_pfcp/run_tier2.sh all ;;
     3) echo "###### TIER 3 (NAS/NGAP) ######"; bash scenarios/tier3_nas_ngap/run_tier3.sh all ;;
     4) echo "###### TIER 4 (SBI) ######"; bash scenarios/tier4_sbi/run_tier4.sh all ;;
+    5) echo "###### TIER 5 (TLS) ######"; bash scenarios/tier5_tls/run_tier5.sh all ;;
     *) echo "[!] Tier $t belum tersedia, lewati." ;;
   esac
 done
