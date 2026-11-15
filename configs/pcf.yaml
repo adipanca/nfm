@@ -1,0 +1,20 @@
+logger: { file: { path: /opt/open5gs/var/log/open5gs/pcf.log } }
+global:
+pcf:
+  default:
+    tls:
+      server:
+        scheme: https
+        private_key: /opt/open5gs/etc/open5gs/tls/pcf.key
+        cert: /opt/open5gs/etc/open5gs/tls/pcf.crt
+      client:
+        scheme: https
+        cacert: /opt/open5gs/etc/open5gs/tls/ca.crt
+  sbi:
+    server:
+    - address: 172.22.0.25
+      port: 7777
+    client:
+      scp:
+      - uri: https://scp:7777
+  db_uri: mongodb://mongo/open5gs

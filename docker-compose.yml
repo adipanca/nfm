@@ -1,0 +1,235 @@
+# ─────────────────────────────────────────────────────────────
+# NFM Testbed 5G — Open5GS 2.7.5 (rentan, utk reproduksi CVE) + UERANSIM 3.2.6.
+# Topologi 3 jaringan internal (isolasi total): cp / up(ran) / dn.
+# SBI memakai model SCP (indirect). TLS diaktifkan terpisah di Fase 2b.
+# Semua jaringan internal:true → tanpa internet (syarat isolasi lab).
+# ─────────────────────────────────────────────────────────────
+
+x-o5gs: &o5gs
+  image: gradiant/open5gs:${OPEN5GS_VERSION:-2.7.5}
+  restart: unless-stopped
+
+networks:
+  cp:   # control plane / SBI — 172.22.0.0/24
+    name: nfm_cp
+    internal: true
+    ipam: { config: [ { subnet: 172.22.0.0/24 } ] }
+  up:   # user plane / RAN (N2,N3,N4) — 172.23.0.0/24
+    name: nfm_up
+    internal: true
+    ipam: { config: [ { subnet: 172.23.0.0/24 } ] }
+  dn:   # data network / N6 — 172.24.0.0/24
+    name: nfm_dn
+    internal: true
+    ipam: { config: [ { subnet: 172.24.0.0/24 } ] }
+
+volumes:
+  mongodata:
+  openvas_data:
+
+services:
+  # ── Subscriber DB ──────────────────────────────────────────
+  mongo:
+    image: mongo:${MONGO_VERSION:-6.0}
+    container_name: mongo
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongodata:/data/db
+    networks:
+      cp: { ipv4_address: 172.22.0.10 }
+
+  # ── NRF / SCP ──────────────────────────────────────────────
+  nrf:
+    <<: *o5gs
+    container_name: nrf
+    command: open5gs-nrfd -c /opt/open5gs/etc/open5gs/nrf.yaml
+    volumes: [ ./configs/nrf.yaml:/opt/open5gs/etc/open5gs/nrf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    networks: { cp: { ipv4_address: 172.22.0.20 } }
+
+  scp:
+    <<: *o5gs
+    container_name: scp
+    command: open5gs-scpd -c /opt/open5gs/etc/open5gs/scp.yaml
+    volumes: [ ./configs/scp.yaml:/opt/open5gs/etc/open5gs/scp.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ nrf ]
+    networks: { cp: { ipv4_address: 172.22.0.21 } }
+
+  # ── NF SBI (cp) ────────────────────────────────────────────
+  ausf:
+    <<: *o5gs
+    container_name: ausf
+    command: open5gs-ausfd -c /opt/open5gs/etc/open5gs/ausf.yaml
+    volumes: [ ./configs/ausf.yaml:/opt/open5gs/etc/open5gs/ausf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp ]
+    networks: { cp: { ipv4_address: 172.22.0.22 } }
+
+  udm:
+    <<: *o5gs
+    container_name: udm
+    command: open5gs-udmd -c /opt/open5gs/etc/open5gs/udm.yaml
+    volumes: [ ./configs/udm.yaml:/opt/open5gs/etc/open5gs/udm.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp ]
+    networks: { cp: { ipv4_address: 172.22.0.23 } }
+
+  udr:
+    <<: *o5gs
+    container_name: udr
+    command: open5gs-udrd -c /opt/open5gs/etc/open5gs/udr.yaml
+    volumes: [ ./configs/udr.yaml:/opt/open5gs/etc/open5gs/udr.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp, mongo ]
+    networks: { cp: { ipv4_address: 172.22.0.24 } }
+
+  pcf:
+    <<: *o5gs
+    container_name: pcf
+    command: open5gs-pcfd -c /opt/open5gs/etc/open5gs/pcf.yaml
+    volumes: [ ./configs/pcf.yaml:/opt/open5gs/etc/open5gs/pcf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp, mongo ]
+    networks: { cp: { ipv4_address: 172.22.0.25 } }
+
+  bsf:
+    <<: *o5gs
+    container_name: bsf
+    command: open5gs-bsfd -c /opt/open5gs/etc/open5gs/bsf.yaml
+    volumes: [ ./configs/bsf.yaml:/opt/open5gs/etc/open5gs/bsf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp ]
+    networks: { cp: { ipv4_address: 172.22.0.26 } }
+
+  nssf:
+    <<: *o5gs
+    container_name: nssf
+    command: open5gs-nssfd -c /opt/open5gs/etc/open5gs/nssf.yaml
+    volumes: [ ./configs/nssf.yaml:/opt/open5gs/etc/open5gs/nssf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp ]
+    networks: { cp: { ipv4_address: 172.22.0.27 } }
+
+  # ── AMF (cp SBI + up N2/NGAP) ──────────────────────────────
+  amf:
+    <<: *o5gs
+    container_name: amf
+    command: open5gs-amfd -c /opt/open5gs/etc/open5gs/amf.yaml
+    volumes: [ ./configs/amf.yaml:/opt/open5gs/etc/open5gs/amf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp, ausf, udm, nssf ]
+    networks:
+      cp: { ipv4_address: 172.22.0.28 }
+      up: { ipv4_address: 172.23.0.32 }
+
+  # ── SMF (cp SBI + up N4/PFCP) ──────────────────────────────
+  smf:
+    <<: *o5gs
+    container_name: smf
+    command: open5gs-smfd -c /opt/open5gs/etc/open5gs/smf.yaml
+    volumes: [ ./configs/smf.yaml:/opt/open5gs/etc/open5gs/smf.yaml:ro, ./tls/certs:/opt/open5gs/etc/open5gs/tls:ro ]
+    depends_on: [ scp, pcf, upf ]
+    networks:
+      cp: { ipv4_address: 172.22.0.29 }
+      up: { ipv4_address: 172.23.0.31 }
+
+  # ── UPF (up N3/N4 + dn N6) ─────────────────────────────────
+  upf:
+    <<: *o5gs
+    container_name: upf
+    command: open5gs-upfd -c /opt/open5gs/etc/open5gs/upf.yaml
+    volumes: [ ./configs/upf.yaml:/opt/open5gs/etc/open5gs/upf.yaml:ro ]
+    user: "0:0"            # root → caps efektif (image default uid 999, caps non-efektif)
+    privileged: true       # /proc/sys rw → entrypoint UPF boleh `sysctl -w` saat buat ogstun
+    environment:
+      ENABLE_NAT: "false"  # JANGAN masquerade → IP asli UE (10.45.x.x) terlihat di N6 (sesuai ground truth)
+    depends_on: [ nrf ]
+    networks:
+      up: { ipv4_address: 172.23.0.30 }
+      dn: { ipv4_address: 172.24.0.30 }
+
+  # ── Data network: webserver (N6 target) ────────────────────
+  webserver:
+    image: nginx:alpine
+    container_name: webserver
+    restart: unless-stopped
+    cap_add: [ NET_ADMIN ]
+    # Rute balik ke pool UE (10.45/16) lewat UPF, lalu jalankan nginx.
+    command: /bin/sh -c "ip route add 10.45.0.0/16 via 172.24.0.30 && exec nginx -g 'daemon off;'"
+    networks: { dn: { ipv4_address: 172.24.0.10 } }
+
+  # ── RAN: gNB ───────────────────────────────────────────────
+  gnb:
+    image: gradiant/ueransim:${UERANSIM_VERSION:-3.2.6}
+    container_name: gnb
+    restart: unless-stopped
+    command: gnb
+    volumes: [ ./configs/ueransim/gnb.yaml:/etc/ueransim/gnb.yaml:ro ]
+    cap_add: [ NET_ADMIN ]
+    depends_on: [ amf, upf ]
+    networks: { up: { ipv4_address: 172.23.0.40 } }
+
+  # ── UE normal (ue1, ue2) + UE jahat (ue-mal) ───────────────
+  ue1:
+    image: gradiant/ueransim:${UERANSIM_VERSION:-3.2.6}
+    container_name: ue1
+    restart: unless-stopped
+    command: ue
+    environment: { GNB_IP: 172.23.0.40 }
+    volumes: [ ./configs/ueransim/ue1.yaml:/etc/ueransim/ue.yaml:ro ]
+    cap_add: [ NET_ADMIN ]
+    devices: [ /dev/net/tun ]
+    depends_on: [ gnb ]
+    networks: { up: { ipv4_address: 172.23.0.41 } }
+
+  ue2:
+    image: gradiant/ueransim:${UERANSIM_VERSION:-3.2.6}
+    container_name: ue2
+    restart: unless-stopped
+    command: ue
+    environment: { GNB_IP: 172.23.0.40 }
+    volumes: [ ./configs/ueransim/ue2.yaml:/etc/ueransim/ue.yaml:ro ]
+    cap_add: [ NET_ADMIN ]
+    devices: [ /dev/net/tun ]
+    depends_on: [ gnb ]
+    networks: { up: { ipv4_address: 172.23.0.42 } }
+
+  ue-mal:
+    image: nfm/ue-mal:latest        # UERANSIM + tool serangan Tier 0/1 (docker/ue-mal/)
+    build: ./docker/ue-mal
+    container_name: ue-mal
+    restart: "no"                   # UE jahat: dinyalakan hanya saat skenario
+    command: ue
+    environment: { GNB_IP: 172.23.0.40 }
+    volumes:
+      - ./configs/ueransim/ue-mal.yaml:/etc/ueransim/ue.yaml:ro
+      - ./docker/attacker/tools:/opt/attacker/tools:ro
+    cap_add: [ NET_ADMIN, NET_RAW ]   # NET_RAW: raw socket utk hping3/nmap -sS
+    devices: [ /dev/net/tun ]
+    depends_on: [ gnb ]
+    networks: { up: { ipv4_address: 172.23.0.43 } }
+
+  # ── Attacker (Kali-style) sisi jaringan inti: Tier 2-4 ─────
+  attacker:
+    image: nfm/attacker:latest
+    build: ./docker/attacker
+    container_name: attacker
+    restart: "no"                     # dinyalakan hanya saat skenario
+    cap_add: [ NET_ADMIN, NET_RAW ]   # raw socket + SCTP utk scapy/ngap
+    volumes: [ ./docker/attacker/tools:/opt/attacker/tools:ro ]
+    networks:
+      cp: { ipv4_address: 172.22.0.50 }   # jangkau SBI
+      up: { ipv4_address: 172.23.0.50 }   # jangkau PFCP(N4)/NGAP(N2)/GTP-U(N3)
+
+  # ── OpenVAS / Greenbone (profile scanner) — scan penuh NF core ──
+  # Aktifkan: docker compose --profile scanner up -d openvas
+  # Catatan: first-run sinkronisasi feed (GB, perlu internet, ~30-60 mnt).
+  # Terhubung ke net cp (jangkau NF) + port UI 9392 via Host-only.
+  openvas:
+    image: immauss/openvas:22.4.36
+    container_name: openvas
+    profiles: [ scanner ]
+    restart: unless-stopped
+    environment:
+      - PASSWORD=${OPENVAS_PASSWORD:-admin}
+      - USERNAME=admin
+      - RELExPInG=true
+    ports:
+      - "${OPENVAS_UI_PORT:-9392}:9392"   # UI Greenbone via Host-only
+    volumes:
+      - openvas_data:/data
+    networks:
+      cp: { ipv4_address: 172.22.0.60 }

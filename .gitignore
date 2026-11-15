@@ -1,0 +1,21 @@
+# Data & hasil (jangan di-commit — bisa besar & sensitif)
+data/
+reports/
+.env
+
+# Sertifikat & kunci TLS lab (jangan bocor)
+tls/ca/
+tls/certs/
+tls/*.key
+tls/*.crt
+tls/*.pem
+tls/*.srl
+
+# Artefak runtime
+*.pcap
+*.pcapng
+*.log
+__pycache__/
+*.pyc
+.venv/
+venv/

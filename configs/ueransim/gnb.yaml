@@ -1,0 +1,15 @@
+# gNB UERANSIM — N2→AMF(172.23.0.32), N3→UPF(172.23.0.30). Slice sst=1 (tanpa sd).
+mcc: '999'
+mnc: '70'
+nci: '0x000000010'
+idLength: 32
+tac: 1
+linkIp: 172.23.0.40     # Radio link simulation (UE↔gNB)
+ngapIp: 172.23.0.40     # N2
+gtpIp: 172.23.0.40      # N3
+amfConfigs:
+  - address: 172.23.0.32
+    port: 38412
+slices:
+  - sst: 1
+ignoreStreamIds: true

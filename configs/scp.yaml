@@ -1,0 +1,20 @@
+# SCP — Service Communication Proxy. Semua NF bicara SBI lewat sini → NRF.
+logger: { file: { path: /opt/open5gs/var/log/open5gs/scp.log } }
+global:
+scp:
+  default:
+    tls:
+      server:
+        scheme: https
+        private_key: /opt/open5gs/etc/open5gs/tls/scp.key
+        cert: /opt/open5gs/etc/open5gs/tls/scp.crt
+      client:
+        scheme: https
+        cacert: /opt/open5gs/etc/open5gs/tls/ca.crt
+  sbi:
+    server:
+    - address: 172.22.0.21
+      port: 7777
+    client:
+      nrf:
+      - uri: https://nrf:7777
