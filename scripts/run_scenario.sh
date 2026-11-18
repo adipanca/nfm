@@ -62,11 +62,41 @@ if ! in_lab_subnet "$DST"; then
 fi
 echo "[guard] target $DST ✓ di dalam subnet lab."
 
+# ── Bangun perintah efektif ──
+# PENTING: bila perintah = `docker exec ...`, `timeout` DI LUAR hanya membunuh
+# KLIEN docker exec; proses DI DALAM container (mis. hping3 -i u200) tetap hidup
+# → jadi serangan nyasar permanen yg mencemari dataset. Solusi: sisipkan `timeout`
+# DI DALAM exec (sebelum perintah kontainer) agar prosesnya benar-benar mati.
+EFF=( "${CMD[@]}" )
+if [[ "${CMD[0]:-}" == "docker" && "${CMD[1]:-}" == "exec" ]]; then
+  pre=( docker exec ); i=2
+  # Lewati flag docker exec; -e/--env/-u/--user/-w/--workdir/--env-file/-l/--label
+  # mengambil satu nilai. Token bukan-flag pertama = nama container.
+  while (( i < ${#CMD[@]} )); do
+    a="${CMD[$i]}"
+    if [[ "$a" == -* ]]; then
+      pre+=( "$a" )
+      case "$a" in
+        -e|--env|-u|--user|-w|--workdir|--env-file|-l|--label)
+          ((i++)); pre+=( "${CMD[$i]}" ) ;;
+      esac
+      ((i++))
+    else
+      pre+=( "$a" ); ((i++)); break   # ini nama container
+    fi
+  done
+  # Sisa = perintah di dalam container → bungkus dgn timeout internal.
+  inner=( "${CMD[@]:i}" )
+  EFF=( "${pre[@]}" timeout -k 5 "$DURATION" "${inner[@]}" )
+fi
+
 # ── Jalankan + catat ground truth ──
 START=$(date +%s)
-echo "==> [$ID/$LABEL] mulai $(date -d @$START '+%H:%M:%S') — ${CMD[*]}"
+echo "==> [$ID/$LABEL] mulai $(date -d @$START '+%H:%M:%S') — ${EFF[*]}"
 set +e
-timeout "$DURATION" "${CMD[@]}"
+# Outer timeout = jaring pengaman (DURATION + grace) utk klien yg menggantung;
+# timeout internal di atas yang benar-benar menghentikan proses di container.
+timeout "$((DURATION + 15))" "${EFF[@]}"
 RC=$?
 set -e
 END=$(date +%s)
